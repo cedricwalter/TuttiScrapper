@@ -1,7 +1,9 @@
 package com.cedricwalter.tutti;
 
-import com.jaunt.*;
-import com.jaunt.component.Form;
+import com.jaunt.Element;
+import com.jaunt.Elements;
+import com.jaunt.NotFound;
+import com.jaunt.UserAgent;
 
 import java.io.BufferedWriter;
 import java.io.IOException;
@@ -9,6 +11,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.StringJoiner;
 
@@ -24,6 +27,7 @@ public class TuttiScraper {
     private final UserAgent tuttiUserAgent;
     String header = "TITLE|	DESCRIPTION| PRICE|	CURRENCY_CODE| QUANTITY| TAGS|	IMAGE1|	IMAGE2|	IMAGE3|	IMAGE4|	IMAGE5";
     private final BufferedWriter writer;
+    private CharSequence tags;
 
     public TuttiScraper(int numberOfPages, String tuttiUser, double conversionRateToBitcoin) throws IOException {
         this.numberOfPages = numberOfPages;
@@ -33,7 +37,6 @@ public class TuttiScraper {
         translatorUserAgent = new UserAgent();
         Path path = Paths.get("./listing.txt");
         writer = Files.newBufferedWriter(path);
-
     }
 
     public void process() throws Exception {
@@ -48,40 +51,39 @@ public class TuttiScraper {
             writer.flush();
             writer.close();
         }
-
     }
 
     private void processTuttiPage(int page, UserAgent translatorUserAgent) throws Exception {
         tuttiUserAgent.visit("https://www.tutti.ch/inserent?o=" + page + "&id=" + tuttiUser);
         Elements links = tuttiUserAgent.doc.findEvery("<h3 class=\"in-title\">").findEvery("<a>");  //find search result links
         for (Element link : links) {
-            processTuttiItem(tuttiUserAgent, translatorUserAgent, link);
+            processTuttiItem(translatorUserAgent, link);
         }
     }
 
-    private void processTuttiItem(UserAgent tuttiUserAgent, UserAgent translatorUserAgent, Element link) throws Exception {
+    private void processTuttiItem( UserAgent translatorUserAgent, Element link) throws Exception {
         String href = link.getAt("href");
         tuttiUserAgent.visit(href);
 
         StringJoiner sb = new StringJoiner("| ");
 
-        sb.add(getTitle(tuttiUserAgent));
-        sb.add(getDescription(tuttiUserAgent, translatorUserAgent));
-        sb.add(getPriceInBTC(tuttiUserAgent));
+        sb.add(getTitle());
+        sb.add(getDescription());
+        sb.add(getPriceInBTC());
 
         sb.add("BTC"); // Currency
         sb.add("1"); // Quantity
-        sb.add(""); // Tags
+        sb.add(getTags()); // Tags
 
-        List<String> images = getImages(tuttiUserAgent);
+        List<String> images = getImages();
         images.stream().forEach(sb::add);
 
         writer.append(sb.toString() + "\n");
     }
 
-    private List<String> getImages(UserAgent tuttiUserAgent) throws NotFound {
+    private List<String> getImages() throws NotFound {
         Elements thumbs = tuttiUserAgent.doc.findEvery("< class=\"vi-thumb noselect\">");
-        List<String> images = new ArrayList<String>(5);
+        List<String> images = new ArrayList<>(5);
         for (Element thumb : thumbs) {
             String src = thumb.getAt("src");
             images.add(src.replaceAll("/thumbs/", "/images/"));
@@ -94,34 +96,24 @@ public class TuttiScraper {
         return images;
     }
 
-    private String getTitle(UserAgent tuttiUserAgent) throws NotFound {
+    private String getTitle() throws NotFound {
         Element titleDiv = tuttiUserAgent.doc.findFirst("<div class=\"vi-title cf\">");
         List<Element> titleElements = titleDiv.getChildElements();
 
         return titleElements.get(0).getText();
     }
 
-    private String getDescription(UserAgent tuttiUserAgent, UserAgent translatorUserAgent) throws Exception {
+    private String getDescription() throws Exception {
         Element descriptionDiv = tuttiUserAgent.doc.findFirst("<div class=\"info-column\">");
         List<Element> childElements = descriptionDiv.getChildElements();
         Element descriptionElement = childElements.get(1);
         String description = "\"" + descriptionElement.getText().trim() + "\"";
 
-        translateDescription(translatorUserAgent, description);
-
         return description;
     }
 
-    private void translateDescription(UserAgent translatorUserAgent, String description) throws NotFound {
-        //        Element textareaParentDiv = translatorUserAgent.doc.findFirst("< id=\"source\">");
-        Form form = translatorUserAgent.doc.getForm(0);
-        form.setTextArea("text", description);
-//        Element submit = translatorUserAgent.doc.findFirst("< id=\"gt-submit\">");
-//        translatorUserAgent.doc.submit("Translate");
-    }
-
-    private String getPriceInBTC(UserAgent tuttiUserAgent) throws NotFound {
-        String price = "";
+    private String getPriceInBTC() throws NotFound {
+        String price;
         try {
             Element locationElementDiv = tuttiUserAgent.doc.findFirst("<div class=\"vi-location\">");
             List<Element> locationElements = locationElementDiv.getChildElements();
@@ -136,5 +128,41 @@ public class TuttiScraper {
         }
         return price;
     }
+
+    public String getTags() throws NotFound {
+        Element breadCrumb = getBreadCrumb();
+        List<Element> childElements = breadCrumb.getChildElements();
+
+        String category = "";
+        String subcategory = "";
+        for (Element childElement : childElements) {
+            String aClass = childElement.getAt("class");
+            if (aClass.equals("breadcrumb_li bc_vi_cat")) {
+                category = childElement.getChildElements().get(0).getText().trim();
+            }
+
+            if (aClass.equals("breadcrumb_li bc_vi_subcat last_crumb")) {
+                subcategory = childElement.getChildElements().get(0).getText().trim();
+            }
+        }
+
+        String s = category + "," + subcategory;
+        return s.replaceAll("&amp;", "&");
+    }
+
+    public Element getBreadCrumb() throws NotFound {
+        Iterator var3 = tuttiUserAgent.doc.findEach("<ul class>").iterator();
+
+        while(var3.hasNext()) {
+            Element next = (Element) var3.next();
+            String aClass = next.getAt("class");
+            if(aClass.equals("breadcrumbs_view_ad")) {
+                return next;
+            }
+        }
+
+        return null;
+    }
+
 
 }
