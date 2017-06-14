@@ -61,7 +61,7 @@ public class TuttiScraper {
         }
     }
 
-    private void processTuttiItem( UserAgent translatorUserAgent, Element link) throws Exception {
+    private void processTuttiItem(UserAgent translatorUserAgent, Element link) throws Exception {
         String href = link.getAt("href");
         tuttiUserAgent.visit(href);
 
@@ -129,34 +129,30 @@ public class TuttiScraper {
         return price;
     }
 
-    public String getTags() throws NotFound {
-        Element breadCrumb = getBreadCrumb();
-        List<Element> childElements = breadCrumb.getChildElements();
-
+    private String getTags() throws NotFound {
         String category = "";
-        String subcategory = "";
-        for (Element childElement : childElements) {
-            String aClass = childElement.getAt("class");
-            if (aClass.equals("breadcrumb_li bc_vi_cat")) {
-                category = childElement.getChildElements().get(0).getText().trim();
-            }
+        Element li = getElementByTypeAndClass("li", "breadcrumb_li bc_vi_cat");
+        if (li != null) {
+            category = li.getChildElements().get(0).getText().trim();
+        }
 
-            if (aClass.equals("breadcrumb_li bc_vi_subcat last_crumb")) {
-                subcategory = childElement.getChildElements().get(0).getText().trim();
-            }
+        String subcategory = "";
+        Element li2 = getElementByTypeAndClass("li", "breadcrumb_li bc_vi_subcat last_crumb");
+        if (li2 != null) {
+            subcategory = li.getChildElements().get(0).getText().trim();
         }
 
         String s = category + "," + subcategory;
         return s.replaceAll("&amp;", "&");
     }
 
-    public Element getBreadCrumb() throws NotFound {
-        Iterator var3 = tuttiUserAgent.doc.findEach("<ul class>").iterator();
+    private Element getElementByTypeAndClass(String elementType, String cssClass) throws NotFound {
+        Iterator var3 = tuttiUserAgent.doc.findEach("<" + elementType + " class>").iterator();
 
-        while(var3.hasNext()) {
+        while (var3.hasNext()) {
             Element next = (Element) var3.next();
             String aClass = next.getAt("class");
-            if(aClass.equals("breadcrumbs_view_ad")) {
+            if (aClass.equals(cssClass)) {
                 return next;
             }
         }
