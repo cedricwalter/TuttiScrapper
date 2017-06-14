@@ -3,6 +3,11 @@ package com.cedricwalter.tutti;
 import com.jaunt.*;
 import com.jaunt.component.Form;
 
+import java.io.BufferedWriter;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.StringJoiner;
@@ -17,49 +22,61 @@ public class TuttiScraper {
     private final String tuttiUser;
     private final UserAgent translatorUserAgent;
     private final UserAgent tuttiUserAgent;
+    String header = "TITLE|	DESCRIPTION| PRICE|	CURRENCY_CODE| QUANTITY| TAGS|	IMAGE1|	IMAGE2|	IMAGE3|	IMAGE4|	IMAGE5";
+    private final BufferedWriter writer;
 
-    public TuttiScraper(int numberOfPages, String tuttiUser, double conversionRateToBitcoin) {
+    public TuttiScraper(int numberOfPages, String tuttiUser, double conversionRateToBitcoin) throws IOException {
         this.numberOfPages = numberOfPages;
         this.tuttiUser = tuttiUser;
         this.conversionRateToBitcoin = conversionRateToBitcoin;
         tuttiUserAgent = new UserAgent();
         translatorUserAgent = new UserAgent();
+        Path path = Paths.get("./listing.txt");
+        writer = Files.newBufferedWriter(path);
+
     }
 
     public void process() throws Exception {
-        translatorUserAgent.visit("https://translate.google.ch/");
-        for (int page = 0; page < numberOfPages; page++) {
-            processTuttiPage(page, translatorUserAgent);
+        try {
+            writer.write(header + "\n");
+
+            translatorUserAgent.visit("https://translate.google.ch/");
+            for (int page = 0; page < numberOfPages; page++) {
+                processTuttiPage(page, translatorUserAgent);
+            }
+        } finally {
+            writer.flush();
+            writer.close();
         }
+
     }
 
     private void processTuttiPage(int page, UserAgent translatorUserAgent) throws Exception {
         tuttiUserAgent.visit("https://www.tutti.ch/inserent?o=" + page + "&id=" + tuttiUser);
         Elements links = tuttiUserAgent.doc.findEvery("<h3 class=\"in-title\">").findEvery("<a>");  //find search result links
         for (Element link : links) {
-            processTuttiItems(tuttiUserAgent, translatorUserAgent, link);
+            processTuttiItem(tuttiUserAgent, translatorUserAgent, link);
         }
     }
 
-    private void processTuttiItems(UserAgent tuttiUserAgent, UserAgent translatorUserAgent, Element link) throws Exception {
+    private void processTuttiItem(UserAgent tuttiUserAgent, UserAgent translatorUserAgent, Element link) throws Exception {
         String href = link.getAt("href");
         tuttiUserAgent.visit(href);
 
-        StringJoiner sb = new StringJoiner(", ");
+        StringJoiner sb = new StringJoiner("| ");
 
         sb.add(getTitle(tuttiUserAgent));
         sb.add(getDescription(tuttiUserAgent, translatorUserAgent));
         sb.add(getPriceInBTC(tuttiUserAgent));
 
+        sb.add("BTC"); // Currency
+        sb.add("1"); // Quantity
+        sb.add(""); // Tags
+
         List<String> images = getImages(tuttiUserAgent);
         images.stream().forEach(sb::add);
 
-
-        sb.add(""); //tags
-        sb.add("");
-        //TITLE	DESCRIPTION	PRICE	CURRENCY_CODE	QUANTITY	TAGS	MATERIALS	IMAGE1	IMAGE2	IMAGE3	IMAGE4	IMAGE5	VARIATION 1 TYPE	VARIATION 1 NAME	VARIATION 1 VALUES	VARIATION 2 TYPE	VARIATION 2 NAME	VARIATION 2 VALUES
-
-        System.out.println(sb.toString());
+        writer.append(sb.toString() + "\n");
     }
 
     private List<String> getImages(UserAgent tuttiUserAgent) throws NotFound {
@@ -71,7 +88,7 @@ public class TuttiScraper {
         }
         if (images.size() < 5) {
             for (int i = images.size(); i < 5; i++) {
-                images.add("img " + i);
+                images.add("");
             }
         }
         return images;
@@ -88,7 +105,7 @@ public class TuttiScraper {
         Element descriptionDiv = tuttiUserAgent.doc.findFirst("<div class=\"info-column\">");
         List<Element> childElements = descriptionDiv.getChildElements();
         Element descriptionElement = childElements.get(1);
-        String description = descriptionElement.getText().trim();
+        String description = "\"" + descriptionElement.getText().trim() + "\"";
 
         translateDescription(translatorUserAgent, description);
 
